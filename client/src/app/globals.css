@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* الوضع الفاتح */
+body {
+  @apply bg-white text-black;
+}
+
+html.dark body {
+  @apply bg-[#1e1b2e] text-white;
+}
+
