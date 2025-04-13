@@ -13,14 +13,12 @@ const Index = () => {
   const { theme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
-  // التأكد من أن التطبيق لا يتم عرضه قبل تحميل المتغيرات
   useEffect(() => {
     setMounted(true);
   }, []);
 
   if (!mounted) return null;
 
-  // دالة رفع الملف
   const handleFile = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -53,7 +51,6 @@ const Index = () => {
     }
   };
 
-  // دالة تحميل الملف بعد التنظيف
   const handleDownload = async () => {
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/download`);
@@ -80,14 +77,15 @@ const Index = () => {
       className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#1e1b2e] to-[#111827] text-white px-4 py-12"
     >
       <div className="bg-white dark:bg-[#2c2a3f] rounded-3xl shadow-2xl px-10 py-14 max-w-2xl w-full text-center space-y-8 animate-fade-in relative">
-        
+
         <div className="absolute top-4 right-4">
           <ThemeToggle />
         </div>
 
-        <h1 className="text-3xl md:text-4xl pb-2 font-bold bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 bg-clip-text text-transparent">
-          تنظيف أرقام الهاتف المكررة من ملف VCF.
+        <h1 className="text-3xl md:text-3xl pb-2 font-bold bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 bg-clip-text text-transparent">
+          "تنظيف جهات الاتصال المكررة من ملف VCF بسهولة"
         </h1>
+
         <p className="text-gray-600 dark:text-gray-300 text-lg">
           قم برفع ملف VCF. وسيتم إزالة الأرقام المكررة تلقائيًا.
         </p>
@@ -136,7 +134,7 @@ const Index = () => {
                     dir="ltr"
                     className="pt-1 border-b border-gray-300 dark:border-white/20 text-gray-800 dark:text-gray-200"
                   >
-                    {contact}
+                    {contact.name} - {contact.number}
                   </li>
                 ))}
               </ul>

@@ -4,6 +4,8 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const cors = require("cors");
+const quotedPrintable = require("quoted-printable");
+const iconv = require("iconv-lite");
 
 app.use(cors());
 app.use(express.json());
@@ -39,6 +41,7 @@ app.get("/", (req, res) => {
 });
 
 // نقطة الرفع ومعالجة ملف VCF
+
 app.post("/upload", upload.single("vcf"), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: "لم يتم رفع أي ملف." });
@@ -47,17 +50,29 @@ app.post("/upload", upload.single("vcf"), (req, res) => {
   try {
     const filePath = path.join(__dirname, "uploads", req.file.filename);
     const rawData = fs.readFileSync(filePath, "utf-8");
-
     const lines = rawData.split(/\r?\n/);
+
     const contacts = [];
     const duplicates = new Set();
+    let currentName = "";
 
     lines.forEach((line) => {
-      if (line.startsWith("TEL:")) {
-        const number = line.replace("TEL:", "").trim();
+      // فك ترميز الاسم إذا كان مشفراً
+      if (line.startsWith("FN;CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE:")) {
+        const encodedName = line.split(":")[1];
+        const decodedBuffer = quotedPrintable.decode(encodedName);
+        currentName = iconv.decode(decodedBuffer, "utf-8").trim();
+      }
+
+      // التقاط أي رقم هاتف (سواء TEL: أو TEL;CELL: أو غيره)
+      if (line.startsWith("TEL")) {
+        const parts = line.split(":");
+        const number = parts[1].trim();
+
         if (!duplicates.has(number)) {
           duplicates.add(number);
-          contacts.push(number);
+          contacts.push({ name: currentName || "غير معروف", number });
+          currentName = ""; // إعادة تعيين الاسم لكل جهة اتصال جديدة
         }
       }
     });
@@ -67,7 +82,7 @@ app.post("/upload", upload.single("vcf"), (req, res) => {
     }
 
     res.status(200).json({
-      message: "✅ تم رفع الملف بنجاح!",
+      message: "✅ تم رفع الملف ومعالجته بنجاح!",
       file: req.file.filename,
       contacts: contacts,
     });
@@ -75,6 +90,7 @@ app.post("/upload", upload.single("vcf"), (req, res) => {
     res.status(500).json({ message: `❌ خطأ: ${error.message}` });
   }
 });
+
 
 // نقطة لتحميل الملف المنظف
 app.get("/download", (req, res) => {
