@@ -19,16 +19,14 @@ const Index = () => {
 
   if (!mounted) return null;
 
-  const handleFile = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const handleFileUpload = async (event) => {
+    const fileInput = event.target.files[0];
+    const formData = new FormData();
+    formData.append("vcf", fileInput);
 
     setLoading(true);
     setDone(false);
     setErrorMessage("");
-
-    const formData = new FormData();
-    formData.append("vcf", file);
 
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/upload`, {
@@ -37,31 +35,28 @@ const Index = () => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "فشل في رفع الملف");
+        setErrorMessage("حدث خطأ في رفع الملف");
+        setLoading(false);
+        return;
       }
 
-      const data = await response.json();
-      setLoading(false);
+      const result = await response.json();
       setDone(true);
-      setContacts(data.contacts);
-    } catch (error) {
+      setContacts(result.contacts);
       setLoading(false);
-      setErrorMessage(error.message);
+    } catch (error) {
+      setErrorMessage("حدث خطأ أثناء الاتصال بالسيرفر.");
+      setLoading(false);
     }
   };
 
   const handleDownload = async () => {
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/download`);
+      if (!response.ok) throw new Error("فشل في تحميل الملف");
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "فشل في تحميل الملف");
-      }
-
-      const data = await response.blob();
-      const url = URL.createObjectURL(data);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
       link.download = "cleaned_contacts.vcf";
@@ -72,27 +67,20 @@ const Index = () => {
   };
 
   return (
-    <main
-      dir="rtl"
-      className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#1e1b2e] to-[#111827] text-white px-4 py-12"
-    >
-      <div className="bg-white dark:bg-[#2c2a3f] rounded-3xl shadow-2xl px-10 py-14 max-w-2xl w-full text-center space-y-8 animate-fade-in relative">
-
+    <main dir="rtl" className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#1e1b2e] to-[#111827] text-white px-4 py-12">
+      <div className="bg-white dark:bg-[#2c2a3f] rounded-3xl shadow-2xl px-10 py-14 max-w-2xl w-full text-center space-y-8 relative">
         <div className="absolute top-4 right-4">
           <ThemeToggle />
         </div>
 
-        <h1 className="text-3xl md:text-3xl pb-2 font-bold bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 bg-clip-text text-transparent">
-          "تنظيف جهات الاتصال المكررة من ملف VCF بسهولة"
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 bg-clip-text text-transparent">
+          تنظيف جهات الاتصال المكررة من ملف VCF بسهولة
         </h1>
-
         <p className="text-gray-600 dark:text-gray-300 text-lg">
-          قم برفع ملف VCF. وسيتم إزالة الأرقام المكررة تلقائيًا.
+          قم برفع ملف VCF، وسيتم إزالة الأرقام المكررة تلقائيًا.
         </p>
 
-        {errorMessage && (
-          <div className="text-red-500 font-semibold">{errorMessage}</div>
-        )}
+        {errorMessage && <div className="text-red-500 font-semibold">{errorMessage}</div>}
 
         <label className="group cursor-pointer border-2 border-dashed border-purple-500 rounded-2xl hover:bg-[#a855f7]/10 p-10 transition duration-300 flex flex-col items-center space-y-4">
           {loading ? (
@@ -105,13 +93,7 @@ const Index = () => {
           <p className="text-lg text-gray-700 dark:text-gray-200">
             {done ? "تم تنظيف الملف بنجاح" : "اضغط هنا لتحديد ملف VCF"}
           </p>
-
-          <input
-            type="file"
-            accept=".vcf"
-            className="hidden"
-            onChange={handleFile}
-          />
+          <input type="file" accept=".vcf" className="hidden" onChange={handleFileUpload} />
         </label>
 
         {done && (
@@ -124,20 +106,17 @@ const Index = () => {
             </button>
 
             <div className="text-right">
-              <h2 className="text-lg font-semibold text-red-500 font-bold">
-                الأرقام المكررة:
-              </h2>
-              <ul className="text-sm mt-2 max-h-40 overflow-y-auto pr-2 text-gray-700 dark:text-gray-200">
+              <h2 className="text-2xl font-semibold text-red-500">الأرقام المكررة:</h2>
+              <ul className="text-1xl mt-2 max-h-40 overflow-y-auto pr-2 text-gray-700 dark:text-gray-200">
                 {contacts.map((contact, index) => (
-                  <li
-                    key={index}
-                    dir="ltr"
-                    className="pt-1 border-b border-gray-300 dark:border-white/20 text-gray-800 dark:text-gray-200"
-                  >
-                    {contact.name} - {contact.number}
+                  <li key={index} dir="ltr" className="pt-1 border-b border-gray-300 dark:border-white/20">
+                    <strong>{contact.number}</strong>
                   </li>
                 ))}
               </ul>
+              <div className="text-green-500 mt-4">
+                العدد الإجمالي للأرقام المكررة: {contacts.length}
+              </div>
             </div>
           </div>
         )}

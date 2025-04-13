@@ -1,111 +1,97 @@
 const express = require("express");
-const app = express();
 const multer = require("multer");
-const path = require("path");
 const fs = require("fs");
+const path = require("path");
 const cors = require("cors");
-const quotedPrintable = require("quoted-printable");
-const iconv = require("iconv-lite");
 
-app.use(cors());
-app.use(express.json());
+const app = express();
+const port = 5000;
 
-// إعداد التخزين
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, "uploads");
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir);
-    }
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    const fileName = Date.now() + path.extname(file.originalname);
-    cb(null, fileName);
-  },
-});
+app.use(cors({ origin: 'http://localhost:3000' }));
 
-const fileFilter = (req, file, cb) => {
-  if (file.mimetype === "text/vcard" || file.originalname.endsWith(".vcf")) {
-    cb(null, true);
-  } else {
-    cb(new Error("❌ فقط ملفات VCF مسموحة!"), false);
-  }
-};
+const upload = multer({ dest: "uploads/" });
 
-const upload = multer({ storage, fileFilter });
-
-// نقطة فحص
-app.get("/", (req, res) => {
-  res.send("🚀 الخادم يعمل بنجاح!");
-});
-
-// نقطة الرفع ومعالجة ملف VCF
+let cleanedFilePath = "";
 
 app.post("/upload", upload.single("vcf"), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ message: "لم يتم رفع أي ملف." });
+  const file = req.file;
+
+  if (!file || !file.path) {
+    return res.status(400).json({ message: "لم يتم رفع الملف بشكل صحيح" });
   }
 
   try {
-    const filePath = path.join(__dirname, "uploads", req.file.filename);
-    const rawData = fs.readFileSync(filePath, "utf-8");
-    const lines = rawData.split(/\r?\n/);
+    const content = fs.readFileSync(file.path, "utf-8");
+    const entries = content.split(/BEGIN:VCARD/i).filter(Boolean);
 
-    const contacts = [];
-    const duplicates = new Set();
-    let currentName = "";
+    const numberCount = {};
+    const numberList = [];
 
-    lines.forEach((line) => {
-      // فك ترميز الاسم إذا كان مشفراً
-      if (line.startsWith("FN;CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE:")) {
-        const encodedName = line.split(":")[1];
-        const decodedBuffer = quotedPrintable.decode(encodedName);
-        currentName = iconv.decode(decodedBuffer, "utf-8").trim();
-      }
+    entries.forEach((entry) => {
+      const numberMatches = [...entry.matchAll(/TEL[^:]*:(\+?\d{6,})/g)];
 
-      // التقاط أي رقم هاتف (سواء TEL: أو TEL;CELL: أو غيره)
-      if (line.startsWith("TEL")) {
-        const parts = line.split(":");
-        const number = parts[1].trim();
-
-        if (!duplicates.has(number)) {
-          duplicates.add(number);
-          contacts.push({ name: currentName || "غير معروف", number });
-          currentName = ""; // إعادة تعيين الاسم لكل جهة اتصال جديدة
-        }
-      }
+      numberMatches.forEach((match) => {
+        const number = match[1];
+        numberCount[number] = (numberCount[number] || 0) + 1;
+        numberList.push(number);
+      });
     });
 
-    if (contacts.length === 0) {
-      return res.status(400).json({ message: "الملف لا يحتوي على جهات اتصال صالحة." });
-    }
+    const duplicates = numberList.filter((number, index, self) =>
+      self.indexOf(number) !== index
+    );
+
+    const seen = new Set();
+    const finalDuplicates = duplicates.filter((num) => {
+      if (seen.has(num)) return false;
+      seen.add(num);
+      return true;
+    });
+
+    const uniqueOnly = Object.entries(numberCount)
+      .filter(([_, count]) => count === 1)
+      .map(([number]) => number);
+
+    const cleanedVcf = uniqueOnly
+      .map(
+        (number) => `BEGIN:VCARD
+VERSION:3.0
+TEL:${number}
+END:VCARD`
+      )
+      .join("\n");
+
+    cleanedFilePath = path.join(__dirname, "cleaned_contacts.vcf");
+    fs.writeFileSync(cleanedFilePath, cleanedVcf, "utf-8");
+    fs.unlinkSync(file.path);
 
     res.status(200).json({
-      message: "✅ تم رفع الملف ومعالجته بنجاح!",
-      file: req.file.filename,
-      contacts: contacts,
+      message: "تمت معالجة الملف بنجاح",
+      contacts: finalDuplicates.map((num) => ({ number: num })),
     });
   } catch (error) {
-    res.status(500).json({ message: `❌ خطأ: ${error.message}` });
+    console.error("خطأ أثناء المعالجة:", error);
+    res.status(500).json({ message: "حدث خطأ أثناء معالجة الملف" });
   }
 });
 
-
-// نقطة لتحميل الملف المنظف
 app.get("/download", (req, res) => {
-  const contacts = ["+1234567890", "+0987654321", "+1122334455"]; // استبدل هذا بقائمة الأرقام المنظفة
-  let vcfContent = "";
-  contacts.forEach((contact) => {
-    vcfContent += `BEGIN:VCARD\nVERSION:3.0\nTEL:${contact}\nEND:VCARD\n`;
-  });
+  if (!cleanedFilePath || !fs.existsSync(cleanedFilePath)) {
+    return res.status(404).json({ message: "لم يتم العثور على ملف نظيف" });
+  }
 
-  res.setHeader("Content-Type", "text/vcard");
-  res.setHeader("Content-Disposition", "attachment; filename=cleaned_contacts.vcf");
-  res.send(vcfContent);
+  res.download(cleanedFilePath, "cleaned_contacts.vcf", (err) => {
+    if (err) {
+      console.error("خطأ في التنزيل:", err);
+      res.status(500).json({ message: "فشل في تنزيل الملف" });
+    }
+  });
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`✅ الخادم يعمل على http://localhost:${PORT}`);
+app.get("/", (req, res) => {
+  res.send("✅ السيرفر يعمل بنجاح!");
+});
+
+app.listen(port, () => {
+  console.log(`✅ السيرفر يعمل على http://localhost:${port}`);
 });
